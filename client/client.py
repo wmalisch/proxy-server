@@ -58,24 +58,36 @@ def save_file_from_socket(sock, bytes_to_read, file_name):
 
 def main():
 
-    # Check command line arguments to retrieve a URL.
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("url", help="URL to fetch with an HTTP GET request")
-    args = parser.parse_args()
-
+    
     # Check the URL passed in and make sure it's valid.  If so, keep track of
     # things for later.
 
     try:
-        parsed_url = urlparse(args.url)
-        if ((parsed_url.scheme != 'http') or (parsed_url.port == None) or (parsed_url.path == '') or (parsed_url.path == '/') or (parsed_url.hostname == None)):
+        if((len(sys.argv) == 4) & (sys.argv[1] == "-proxy")):
+            proxyURL = sys.argv[2].partition(':')
+            proxyHost = proxyURL[0]
+            proxyPort = proxyURL[2]
+            if(sys.argv[3].partition(':')[0] != "http"):
+                raise ValueError
+            serverHost = sys.argv[3].partition('//')[2].partition(':')[0]
+            serverPort = sys.argv[3].partition('//')[2].partition(':')[2].partition('/')[0]
+            filePath = sys.argv[3].partition('//')[2].partition(':')[2].partition('/')[2]
+            fileType = filePath.rpartition(".")[2]
+        elif((len(sys.argv) == 2)):
+            parser = argparse.ArgumentParser()
+            parser.add_argument("url", help="URL to fetch with an HTTP GET request")
+            args = parser.parse_args()
+            parsed_url = urlparse(args.url)
+            if ((parsed_url.scheme != 'http') or (parsed_url.port == None) or (parsed_url.path == '') or (parsed_url.path == '/') or (parsed_url.hostname == None)):
+                raise ValueError
+            serverHost = parsed_url.hostname
+            serverPort = parsed_url.port
+            filePath = parsed_url.path
+            fileType = filePath.rpartition(".")[2]
+        else:
             raise ValueError
-        host = parsed_url.hostname
-        port = parsed_url.port
-        file_name = parsed_url.path
     except ValueError:
-        print('Error:  Invalid URL.  Enter a URL of the form:  http://host:port/file')
+        print('Error:  Invalid Arguments.  Enter a URL of the form:  python3 client.py -proxy proxy_host_here:proxy_port_here http://server_host_here:server_port_here/the/file/path.filetype')
         sys.exit(1)
 
     # Now we try to make a connection to the server.
@@ -101,7 +113,7 @@ def main():
     headers_done = False
         
     # If an error is returned from the server, we dump everything sent and
-    # exit right away.  
+    # exit right away.   
     
     if response_list[1] != '200':
         print('Error:  An error response was received from the server.  Details:\n')
