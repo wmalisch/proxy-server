@@ -58,7 +58,17 @@ def save_file_from_socket(sock, bytes_to_read, file_name):
 
 def main():
 
-    
+    # If it is 4, do proxy execution, if it is 2, do regular server execution
+    try:
+        args = len(sys.argv)
+        if((args == 2) or (args == 4)):
+            pass
+        else:
+            raise ValueError
+    except ValueError:
+        print('Error:  Invalid Arguments.  Enter of the form:  python3 client.py -proxy proxy_host_here:proxy_port_here http://server_host_here:server_port_here/the/file/path.filetype OR python3 client.py http://server_host_here:server_port_here/the/file/path.filetype')
+        sys.exit(1)
+
     # Check the URL passed in and make sure it's valid.  If so, keep track of
     # things for later.
 
@@ -66,13 +76,13 @@ def main():
         if((len(sys.argv) == 4) & (sys.argv[1] == "-proxy")):
             proxyURL = sys.argv[2].partition(':')
             proxyHost = proxyURL[0]
-            proxyPort = proxyURL[2]
+            proxyPort = int(proxyURL[2])
             if(sys.argv[3].partition(':')[0] != "http"):
                 raise ValueError
             serverHost = sys.argv[3].partition('//')[2].partition(':')[0]
             serverPort = sys.argv[3].partition('//')[2].partition(':')[2].partition('/')[0]
-            filePath = sys.argv[3].partition('//')[2].partition(':')[2].partition('/')[2]
-            fileType = filePath.rpartition(".")[2]
+            file_name = sys.argv[3].partition('//')[2].partition(':')[2].partition('/')[2]
+            fileType = file_name.rpartition(".")[2]
         elif((len(sys.argv) == 2)):
             parser = argparse.ArgumentParser()
             parser.add_argument("url", help="URL to fetch with an HTTP GET request")
@@ -80,79 +90,96 @@ def main():
             parsed_url = urlparse(args.url)
             if ((parsed_url.scheme != 'http') or (parsed_url.port == None) or (parsed_url.path == '') or (parsed_url.path == '/') or (parsed_url.hostname == None)):
                 raise ValueError
-            serverHost = parsed_url.hostname
-            serverPort = parsed_url.port
-            filePath = parsed_url.path
-            fileType = filePath.rpartition(".")[2]
+            host = parsed_url.hostname
+            port = parsed_url.port
+            file_name = parsed_url.path
+            fileType = file_name.rpartition(".")[2]
         else:
             raise ValueError
     except ValueError:
-        print('Error:  Invalid Arguments.  Enter a URL of the form:  python3 client.py -proxy proxy_host_here:proxy_port_here http://server_host_here:server_port_here/the/file/path.filetype')
+        print('Error:  Invalid Arguments.  Enter of the form:  python3 client.py -proxy proxy_host_here:proxy_port_here http://server_host_here:server_port_here/the/file/path.filetype OR python3 client.py http://server_host_here:server_port_here/the/file/path.filetype')
         sys.exit(1)
 
-    # Now we try to make a connection to the server.
-
-    print('Connecting to server ...')
-    try:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect((host, port))
-    except ConnectionRefusedError:
-        print('Error:  That host or port is not accepting connections.')
-        sys.exit(1)
-
-    # The connection was successful, so we can prep and send our message.
-    
-    print('Connection to server established. Sending message...\n')
-    message = prepare_get_message(host, port, file_name)
-    client_socket.send(message.encode())
-   
-    # Receive the response from the server and start taking a look at it
-
-    response_line = get_line_from_socket(client_socket)
-    response_list = response_line.split(' ')
-    headers_done = False
+    # If args is 2, we connect direct to server. If 4, we connect via proxy
+    if(args == 4):
+        print("Connecting to proxy server ...")
+        try:
+            client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            client_socket.connect((proxyHost, proxyPort))
+        except ConnectionRefusedError:
+            print("Error: That host or port is not acception connection. Try again later.")
+            sys.exit(1)
         
-    # If an error is returned from the server, we dump everything sent and
-    # exit right away.   
-    
-    if response_list[1] != '200':
-        print('Error:  An error response was received from the server.  Details:\n')
-        print(response_line);
-        bytes_to_read = 0
-        while (not headers_done):
-            header_line = get_line_from_socket(client_socket)
-            print(header_line)
-            header_list = header_line.split(' ')
-            if (header_line == ''):
-                headers_done = True
-            elif (header_list[0] == 'Content-Length:'):
-                bytes_to_read = int(header_list[1])
-        print_file_from_socket(client_socket, bytes_to_read)
-        sys.exit(1)
-           
-    
-    # If it's OK, we retrieve and write the file out.
+        print("Connection to proxy server established. Sending message ...\n")
+        message = prepare_get_message(serverHost,serverPort,file_name)
+        client_socket.send(message.encode())
+
+
+        ######################################################
+        # Rest of client code here
+        ######################################################
 
     else:
+        print('Connecting to server ...')
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect((host, port))
+        except ConnectionRefusedError:
+            print('Error:  That host or port is not accepting connections. Try again later.')
+            sys.exit(1)
 
-        print('Success:  Server is sending file.  Downloading it now.')
+        # The connection was successful, so we can prep and send our message.
+        
+        print('Connection to server established. Sending message ...\n')
+        message = prepare_get_message(host, port, file_name)
+        client_socket.send(message.encode())
+    
+        # Receive the response from the server and start taking a look at it
 
-        # If requested file begins with a / we strip it off.
+        response_line = get_line_from_socket(client_socket)
+        response_list = response_line.split(' ')
+        headers_done = False
+            
+        # If an error is returned from the server, we dump everything sent and
+        # exit right away.   
+        
+        if response_list[1] != '200':
+            print('Error:  An error response was received from the server.  Details:\n')
+            print(response_line);
+            bytes_to_read = 0
+            while (not headers_done):
+                header_line = get_line_from_socket(client_socket)
+                print(header_line)
+                header_list = header_line.split(' ')
+                if (header_line == ''):
+                    headers_done = True
+                elif (header_list[0] == 'Content-Length:'):
+                    bytes_to_read = int(header_list[1])
+            print_file_from_socket(client_socket, bytes_to_read)
+            sys.exit(1)
+            
+        
+        # If it's OK, we retrieve and write the file out.
 
-        while (file_name[0] == '/'):
-            file_name = file_name[1:]
+        else:
 
-        # Go through headers and find the size of the file, then save it.
-   
-        bytes_to_read = 0
-        while (not headers_done):
-            header_line = get_line_from_socket(client_socket)
-            header_list = header_line.split(' ')
-            if (header_line == ''):
-                headers_done = True
-            elif (header_list[0] == 'Content-Length:'):
-                bytes_to_read = int(header_list[1])
-        save_file_from_socket(client_socket, bytes_to_read, file_name)
+            print('Success:  Server is sending file.  Downloading it now.')
 
+            # If requested file begins with a / we strip it off.
+
+            while (file_name[0] == '/'):
+                file_name = file_name[1:]
+
+            # Go through headers and find the size of the file, then save it.
+    
+            bytes_to_read = 0
+            while (not headers_done):
+                header_line = get_line_from_socket(client_socket)
+                header_list = header_line.split(' ')
+                if (header_line == ''):
+                    headers_done = True
+                elif (header_list[0] == 'Content-Length:'):
+                    bytes_to_read = int(header_list[1])
+            save_file_from_socket(client_socket, bytes_to_read, file_name)
 if __name__ == '__main__':
     main()
