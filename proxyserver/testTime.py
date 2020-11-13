@@ -10,10 +10,16 @@ print(os.path.isdir('localhost_8000/txts/not'))
 strx = 'file/file.txt'
 stry = 'fold/file/file.txt'
 strz = 'file.txt'
-date = datetime.datetime.now()
-date_string = 'Date: ' + date.strftime('%a, %d %b %Y %H:%M:%S EDT')
-print(date_string)
-print(os.path.getsize('505.html'))
+print(strx.rpartition('/'))
+print(stry.rpartition('/'))
+print(strz.rpartition('/'))
+print(os.path.exists('localhost_9091/files/file1.txt'))
+
+
+# date = datetime.datetime.now()
+# date_string = 'Date: ' + date.strftime('%a, %d %b %Y %H:%M:%S EDT')
+# print(date_string)
+# print(os.path.getsize('505.html'))
 # directory = 'localhost_9999/hey/how/are/ya/he'
 # directoryArray = directory.split('/')
 # print(directoryArray)

@@ -4,7 +4,7 @@ import datetime
 import signal
 import sys
 
-PORT = 8082
+PORT = 8081
 BUFFER_SIZE = 1024 # bytes
 EXPIRY = 30 # Second
 
@@ -13,6 +13,19 @@ EXPIRY = 30 # Second
 def signal_handler(sig, frame):
     print('Interrupt received, shutting down ...')
     sys.exit(0)
+
+def make_directory(arr):
+    temp = '.'
+    for folder in arr:
+        if(os.path.isdir(temp)):
+            temp = temp + '/' + folder
+        else:
+            os.mkdir(temp)
+            temp = temp + '/' + folder
+    if(os.path.isdir(temp)):
+        pass
+    else:
+        os.mkdir(temp) # This is just for the last folder that wasn't added in the for loop
 
 def prepare_get_message(line1, line2):
     request = line1 + '\r\n'+  line2 + '\r\n\r\n'
@@ -49,27 +62,15 @@ def prepare_response_message(value):
         message = message + value + ' Version Not Supported\r\n' + date_string + '\r\n'
     return message
 
-def send_response_to_client(sock, code, file_name):
-    # Determine content type of file
+def send_error_to_client(sock, code, file_name):
 
-    if ((file_name.endswith('.jpg')) or (file_name.endswith('.jpeg'))):
-        type = 'image/jpeg'
-    elif (file_name.endswith('.gif')):
-        type = 'image/gif'
-    elif (file_name.endswith('.png')):
-        type = 'image/jpegpng'
-    elif ((file_name.endswith('.html')) or (file_name.endswith('.htm'))):
-        type = 'text/html'
-    else:
-        type = 'application/octet-stream'
-    
-    # Get size of file
-
+    type = 'text/html'
     file_size = os.path.getsize(file_name)
 
     # Construct header and send it
 
-    header = prepare_response_message(code) + 'Content-Type: ' + type + '\r\nContent-Length: ' + str(file_size) + '\r\n\r\n'
+    header = prepare_response_message(code) + 'Content-Type: ' + type + '\r\nContent-Length: ' + str(file_size) + '\r\n\r\n\r\n'
+    print(header)
     sock.send(header.encode())
 
     # Open the file, read it, and send it
@@ -79,6 +80,21 @@ def send_response_to_client(sock, code, file_name):
             chunk = file_to_send.read(BUFFER_SIZE)
             if chunk:
                 sock.send(chunk)
+            else:
+                break
+
+def send_response_to_client(client, path, file_name, message):
+    
+    client.send(message.encode())
+
+    # Open the file, read it, and send it
+
+    file_path = path + '/' + file_name
+    with open(file_path, 'rb') as file_to_send:
+        while True:
+            chunk = file_to_send.read(BUFFER_SIZE)
+            if chunk:
+                client.send(chunk)
             else:
                 break
 
@@ -109,6 +125,18 @@ def forward_response_to_client(resp, client, server):
         chunk = server.recv(BUFFER_SIZE)
         bytes_sent += len(chunk)
         client.send(chunk)
+
+# Read a file from the socket and save it out
+
+def save_file_from_socket(sock, bytes_to_read, path, file_name):
+    file = path + '/' + file_name
+    sock.recv(2)
+    with open(file, 'wb') as file_to_write:
+        bytes_read = 0
+        while (bytes_read < bytes_to_read):
+            chunk = sock.recv(BUFFER_SIZE)
+            bytes_read += len(chunk)
+            file_to_write.write(chunk)
 
 # Our main function.
 
@@ -155,13 +183,13 @@ def main():
         
         if (request_list[0] != 'GET'):
             print('Invalid type of request received ... responding with error!')
-            send_response_to_client(conn,'501','501.html')
+            send_error_to_client(conn,'501','501.html')
         
         # If we get the incorrect http version respond with a 505
 
         elif(request_list[2] != 'HTTP/1.1'):
             print('Invalid HTTP version received ... responding with error!')
-            send_response_to_client(conn, '505','505.html')
+            send_error_to_client(conn, '505','505.html')
         
         # We have the correct HTTP version and request type
         
@@ -173,13 +201,14 @@ def main():
             while (req_file[0] == '/'):
                 req_file = req_file[1:]
             directory = server[0]+"_"+server[2]+"/"+req_file.rpartition('/')[0]
+            file_path = server[0]+"_"+server[2]+"/"+req_file
 
             # If the directory does not exist, retrieve file if it exists and create directory
             
-            if(os.path.isdir(directory) != True):
+            if(os.path.exists(file_path) != True):
             
                 # Connect to main server
-
+                print(file_path)
                 print("Connecting to main server ...")
                 try:
                     server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -210,18 +239,36 @@ def main():
                 else:
                     
                     print('Success:  Server is sending file.  Downloading it now.')
-                    
-                    # Create the directory for this file
 
+                    # Create the directory for this file
+                    
                     directoryArray = directory.split('/')
-                    temp = '.'
-                    for folder in directoryArray:
-                        if(os.path.isdir(temp)):
-                            temp = temp + '/' + folder
-                        else:
-                            os.mkdir(temp)
-                            temp = temp + '/' + folder
-                    os.mkdir(temp) # This is just for the last folder that wasn't added in the for loop
+                    make_directory(directoryArray)
+                    file_name = req_file.rpartition('/')[2]
+                    
+                    
+                    # Go through headers and find the size of the file, then save it
+
+                    bytes_to_read = 0
+                    headers_done = False
+                    header_message = response_line
+                    while(not headers_done):
+                        header_line = get_line_from_socket(server_socket)
+                        header_message = header_message + '\r\n'+ header_line
+                        header_list = header_line.split(' ')
+                        if(header_line == ''):
+                            headers_done = True
+                        elif(header_list[0] == 'Content-Length:'):
+                            bytes_to_read = int(header_list[1])
+                    header_message+='\r\n\r\n'
+                    save_file_from_socket(server_socket, bytes_to_read, directory, file_name)
+
+                    send_response_to_client(conn, directory, file_name, header_message)
+
+            # If the file is in the proxy, we must send conditional get to see if it us been updated
+
+            else:
+                print('do this if the file exists')
 
 
         
