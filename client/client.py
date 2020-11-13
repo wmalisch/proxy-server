@@ -114,9 +114,33 @@ def main():
         message = prepare_get_message(serverHost,serverPort,file_name)
         client_socket.send(message.encode())
 
+        response_line = get_line_from_socket(client_socket)
+        response_list = response_line.split(' ')
+        headers_done = False
+            
+        # If an error is returned from the server, we dump everything sent and
+        # exit right away.   
+        
+        if response_list[1] != '200':
+            print('Error:  An error response was received from the server.  Details:\n')
+            print(response_line);
+            bytes_to_read = 0
+            while (not headers_done):
+                header_line = get_line_from_socket(client_socket)
+                print(header_line)
+                header_list = header_line.split(' ')
+                if (header_line == ''):
+                    headers_done = True
+                elif (header_list[0] == 'Content-Length:'):
+                    bytes_to_read = int(header_list[1])
+            print_file_from_socket(client_socket, bytes_to_read)
+            sys.exit(1)
 
+        # File exists and is okay
+        else:
+            print('file was okay, read headers and download file')
         ######################################################
-        # Rest of client code here
+        # Rest of client code here for receiving the file in return
         ######################################################
 
     else:
@@ -132,8 +156,34 @@ def main():
         
         print('Connection to server established. Sending message ...\n')
         message = prepare_get_message(host, port, file_name)
+        print('message about to send')
         client_socket.send(message.encode())
-    
+
+        print('receiving response')
+        response_line = get_line_from_socket(client_socket)
+        print('response line')
+        response_list = response_line.split(' ')
+        headers_done = False
+            
+        # If an error is returned from the server, we dump everything sent and
+        # exit right away.   
+        
+        if response_list[1] != '200':
+            print('Error:  An error response was received from the server.  Details:\n')
+            print(response_line);
+            bytes_to_read = 0
+            while (not headers_done):
+                header_line = get_line_from_socket(client_socket)
+                print(header_line)
+                header_list = header_line.split(' ')
+                if (header_line == ''):
+                    headers_done = True
+                elif (header_list[0] == 'Content-Length:'):
+                    bytes_to_read = int(header_list[1])
+            print_file_from_socket(client_socket, bytes_to_read)
+            sys.exit(1)
+
+
         # Receive the response from the server and start taking a look at it
 
         response_line = get_line_from_socket(client_socket)
@@ -181,5 +231,6 @@ def main():
                 elif (header_list[0] == 'Content-Length:'):
                     bytes_to_read = int(header_list[1])
             save_file_from_socket(client_socket, bytes_to_read, file_name)
+        
 if __name__ == '__main__':
     main()

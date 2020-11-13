@@ -7,6 +7,7 @@ import sys
 # Constant for our buffer size
  
 BUFFER_SIZE = 1024
+PORT = 9091
 
 # Signal handler for graceful exiting.
 
@@ -18,7 +19,7 @@ def signal_handler(sig, frame):
 
 def prepare_response_message(value):
     date = datetime.datetime.now()
-    date_string = 'Date: ' + date.strftime('%a, %d %b %Y %H:%M:%S EDT')
+    date_string = 'Date: ' + date.strftime('%A, %D %B %Y %H:%M:%S EDT')
     message = 'HTTP/1.1 '
     if value == '200':
         message = message + value + ' OK\r\n' + date_string + '\r\n'
@@ -53,7 +54,8 @@ def send_response_to_client(sock, code, file_name):
 
     # Construct header and send it
 
-    header = prepare_response_message(code) + 'Content-Type: ' + type + '\r\nContent-Length: ' + str(file_size) + '\r\n\r\n'
+    header = prepare_response_message(code) + 'Content-Type: ' + type + '\r\nContent-Length: ' + str(file_size) + '\r\n\r\n\r\n'
+    print(header)
     sock.send(header.encode())
 
     # Open the file, read it, and send it
@@ -94,30 +96,35 @@ def main():
     # Create the socket.  We will ask this to work on any interface and to pick
     # a free port at random.  We'll print this out for clients to use.
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('', 0))
-    print('Will wait for client connections at port ' + str(server_socket.getsockname()[1]))
-    server_socket.listen(1)
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.bind(('', PORT))
+    print('Will wait for client connections at port ' + str(client_socket.getsockname()[1]))
+    client_socket.listen(1)
     
     # Keep the server running forever.
     
     while(1):
         print('Waiting for incoming client connection ...')
-        conn, addr = server_socket.accept()
+        conn, addr = client_socket.accept()
         print('Accepted connection from client address:', addr)
         print('Connection to client established, waiting to receive message...')
 
         # We obtain our request from the socket.  We look at the request and
-        # figure out what to do based on the contents of things.
-
+        # figure out what to do based on the headers received
+        
         request = get_line_from_socket(conn)
-        print('Received request:  ' + request)
+        print(request)
+        host_port = get_line_from_socket(conn)
+        print(host_port)
+        conditional = get_line_from_socket(conn)
+        print(conditional)
         request_list = request.split()
+        print(request_list)
 
         # This server doesn't care about headers, so we just clean them up.
-
-        while (get_line_from_socket(conn) != ''):
-            pass
+        if(conditional != ''):
+            while (get_line_from_socket(conn) != ''):
+                pass
 
         # If we did not get a GET command respond with a 501.
 
@@ -141,20 +148,36 @@ def main():
             while (req_file[0] == '/'):
                 req_file = req_file[1:]
 
-            # Check if requested file exists and report a 404 if not.
 
-            if (not os.path.exists(req_file)):
-                print('Requested file does not exist ... responding with error!')
-                send_response_to_client(conn, '404', '404.html')
+            # If this is a conditional get
 
-            # File exists, so prepare to send it!  
+            if(conditional != ''):
+                #########################
+                # CODE FOR CONDITIONAL GET
+                #
+                # Return a 304 if the file was not updated, otherwise return file
+                #
+                #########################
+                print('write code here for the conditional GET')
+
+            # If this is a regular get
 
             else:
-                print('Requested file good to go!  Sending file ...')
-                send_response_to_client(conn, '200', req_file)
-                
-        # We are all done with this client, so close the connection and
-        # Go back to get another one!
+
+                # Check if requested file exists and report a 404 if not.
+
+                if (not os.path.exists(req_file)):
+                    print('Requested file does not exist ... responding with error!')
+                    send_response_to_client(conn, '404', '404.html')
+
+                # File exists, so prepare to send it!  
+
+                else:
+                    print('Requested file good to go!  Sending file ...')
+                    send_response_to_client(conn, '200', req_file)
+                    
+                # We are all done with this client, so close the connection and
+                # Go back to get another one!
 
         conn.close();
     

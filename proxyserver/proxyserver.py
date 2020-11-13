@@ -4,7 +4,7 @@ import datetime
 import signal
 import sys
 
-PORT = 8080
+PORT = 8082
 BUFFER_SIZE = 1024 # bytes
 EXPIRY = 30 # Second
 
@@ -15,10 +15,8 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def prepare_get_message(line1, line2):
-    request = line1 + line2
+    request = line1 + '\r\n'+  line2 + '\r\n\r\n'
     return request
-
-
 
 # Read a single line (ending with \n) from a socket and return it.
 # We will strip out the \r and the \n in the process.
@@ -35,10 +33,82 @@ def get_line_from_socket(sock):
             line = line + char
     return line
 
+# Create an HTTP response
+
+def prepare_response_message(value):
+    date = datetime.datetime.now()
+    date_string = 'Date: ' + date.strftime('%a, %d %b %Y %H:%M:%S EDT')
+    message = 'HTTP/1.1 '
+    if value == '200':
+        message = message + value + ' OK\r\n' + date_string + '\r\n'
+    elif value == '404':
+        message = message + value + ' Not Found\r\n' + date_string + '\r\n'
+    elif value == '501':
+        message = message + value + ' Method Not Implemented\r\n' + date_string + '\r\n'
+    elif value == '505':
+        message = message + value + ' Version Not Supported\r\n' + date_string + '\r\n'
+    return message
+
 def send_response_to_client(sock, code, file_name):
-    ##################################
-    # WRITE CODE TO SEND RESPONSE HERE
-    ##################################
+    # Determine content type of file
+
+    if ((file_name.endswith('.jpg')) or (file_name.endswith('.jpeg'))):
+        type = 'image/jpeg'
+    elif (file_name.endswith('.gif')):
+        type = 'image/gif'
+    elif (file_name.endswith('.png')):
+        type = 'image/jpegpng'
+    elif ((file_name.endswith('.html')) or (file_name.endswith('.htm'))):
+        type = 'text/html'
+    else:
+        type = 'application/octet-stream'
+    
+    # Get size of file
+
+    file_size = os.path.getsize(file_name)
+
+    # Construct header and send it
+
+    header = prepare_response_message(code) + 'Content-Type: ' + type + '\r\nContent-Length: ' + str(file_size) + '\r\n\r\n'
+    sock.send(header.encode())
+
+    # Open the file, read it, and send it
+
+    with open(file_name, 'rb') as file_to_send:
+        while True:
+            chunk = file_to_send.read(BUFFER_SIZE)
+            if chunk:
+                sock.send(chunk)
+            else:
+                break
+
+# Forward error responses
+
+def forward_response_to_client(resp, client, server):
+    
+    # Get all the headers so that we can get the error file
+
+    response = resp
+    date = get_line_from_socket(server)
+    content_type = get_line_from_socket(server)
+    content_length = get_line_from_socket(server)
+    # Remove any remining headers and forward headers to client
+
+    while(get_line_from_socket(server) != ''):
+        pass
+    client_response = response + '\r\n' + date + '\r\n' + content_type + '\r\n' + content_length + '\r\n'
+    print(client_response)
+    client.send(client_response.encode())
+    print('SENT HEADER')
+    # Forward file to client
+    print('Now sending file')
+    length = content_length.split(' ')
+    bytes_to_send = int(length[1])
+    bytes_sent = 0
+    while(bytes_sent < bytes_to_send):
+        chunk = server.recv(BUFFER_SIZE)
+        bytes_sent += len(chunk)
+        client.send(chunk)
 
 # Our main function.
 
@@ -77,12 +147,12 @@ def main():
         # THIS WILL REMOVE HEADERS. GO BACK AND CHECK LATER IF WE NEED ANY HEADERS
         # IN THE PROXY SERVER FOR ANY REASON
         ########################################################################
+        
         while (get_line_from_socket(conn) != ''):
             pass
 
         # If we did not get a GET command respond with a 501
-
-        print(request_list)
+        
         if (request_list[0] != 'GET'):
             print('Invalid type of request received ... responding with error!')
             send_response_to_client(conn,'501','501.html')
@@ -96,7 +166,7 @@ def main():
         # We have the correct HTTP version and request type
         
         else:
-            
+
             # Remove the leading / if it exists
 
             req_file = request_list[1]
@@ -104,17 +174,16 @@ def main():
                 req_file = req_file[1:]
             directory = server[0]+"_"+server[2]+"/"+req_file.rpartition('/')[0]
 
-            # If the directory does not exist, create it and retrieve file
+            # If the directory does not exist, retrieve file if it exists and create directory
             
             if(os.path.isdir(directory) != True):
             
-                
                 # Connect to main server
 
-                print("Connecting to proxy server ...")
+                print("Connecting to main server ...")
                 try:
-                    client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                    client_socket.connect((server[0], server[2]))
+                    server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                    server_socket.connect((server[0], int(server[2])))
                 except ConnectionRefusedError:
                     print("Error: That host or port is not acception connection. Try again later.")
                     sys.exit(1)
@@ -123,24 +192,41 @@ def main():
 
                 print("Connection to main server established. Sending message ...\n")
                 message = prepare_get_message(request, server_info)
-                client_socket.send(message.encode())
+                print(message)
+                server_socket.send(message.encode())
+
+                response_line = get_line_from_socket(server_socket)
+                print(response_line)
+                response_list = response_line.split(' ')
+
+                # If file does not exist, or error is encountered
+                
+                if response_list[1] != '200':
+                    print('going to forward response to client method')
+                    forward_response_to_client(response_line, conn, server_socket)
+                
+                # File exists
+
+                else:
+                    
+                    print('Success:  Server is sending file.  Downloading it now.')
+                    
+                    # Create the directory for this file
+
+                    directoryArray = directory.split('/')
+                    temp = '.'
+                    for folder in directoryArray:
+                        if(os.path.isdir(temp)):
+                            temp = temp + '/' + folder
+                        else:
+                            os.mkdir(temp)
+                            temp = temp + '/' + folder
+                    os.mkdir(temp) # This is just for the last folder that wasn't added in the for loop
 
 
-
-
-                # DO THIS WHEN YOU RECEIVE THE FILE BACK AND IT IS NOT A 404
-                # For each directory that does not exist in the path to the file, make one
-
-                directoryArray = directory.split('/')
-                temp = '.'
-                for folder in directoryArray:
-                    if(os.path.isdir(temp)):
-                        temp = temp + '/' + folder
-                    else:
-                        os.mkdir(temp)
-                        temp = temp + '/' + folder
-                os.mkdir(temp) # This is just for the last folder that wasn't added in the for loop
-
+        
+        
+        conn.close()
             
             
 
