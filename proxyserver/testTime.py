@@ -1,4 +1,5 @@
 import datetime
+import time
 import os
 
 print(os.path.isdir('localhost_8000'))
@@ -10,27 +11,21 @@ print(os.path.isdir('localhost_8000/txts/not'))
 strx = 'file/file.txt'
 stry = 'fold/file/file.txt'
 strz = 'file.txt'
-print(strx.rpartition('/'))
-print(stry.rpartition('/'))
-print(strz.rpartition('/'))
-print(os.path.exists('localhost_9091/files/file1.txt'))
+file4 = 'localhost_9090/files/file1.txt'
 
+# Last modified time in seconds from epoch
+mod = os.stat(file4).st_mtime
+print(mod)
 
-# date = datetime.datetime.now()
-# date_string = 'Date: ' + date.strftime('%a, %d %b %Y %H:%M:%S EDT')
-# print(date_string)
-# print(os.path.getsize('505.html'))
-# directory = 'localhost_9999/hey/how/are/ya/he'
-# directoryArray = directory.split('/')
-# print(directoryArray)
-# temp = '.'
+# Current time in time structure
+# now = time.gmtime()
+# print(now)
 
-# for folder in directoryArray:
-#     if(os.path.isdir(temp)):
-#         temp = temp + '/' + folder
-#     else:
-#         os.mkdir(temp)
-#         temp = temp + '/' + folder
-# os.mkdir(temp)
+# Current time in seconds from epoch
+epoch_time = int(time.time())
+print(epoch_time)
 
+# Formatted time for last modified time
+# v = time.ctime(os.path.getmtime(file4))
+# print("last modified: %s" % v)
 

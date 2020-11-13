@@ -1,12 +1,13 @@
 import socket
 import os
 import datetime
+import time
 import signal
 import sys
 
 PORT = 8081
 BUFFER_SIZE = 1024 # bytes
-EXPIRY = 30 # Second
+EXPIRY_IN_SECONDS = 30 # Second
 
 # Signal handler for graceful exiting.
 
@@ -203,23 +204,22 @@ def main():
             directory = server[0]+"_"+server[2]+"/"+req_file.rpartition('/')[0]
             file_path = server[0]+"_"+server[2]+"/"+req_file
 
+            # Connect to main server
+            print(file_path)
+            print("Connecting to main server ...")
+            try:
+                server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                server_socket.connect((server[0], int(server[2])))
+            except ConnectionRefusedError:
+                print("Error: That host or port is not acception connection. Try again later.")
+                sys.exit(1)
+            print("Connection to main server established. Sending message ...\n")
+               
+
             # If the directory does not exist, retrieve file if it exists and create directory
             
             if(os.path.exists(file_path) != True):
             
-                # Connect to main server
-                print(file_path)
-                print("Connecting to main server ...")
-                try:
-                    server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                    server_socket.connect((server[0], int(server[2])))
-                except ConnectionRefusedError:
-                    print("Error: That host or port is not acception connection. Try again later.")
-                    sys.exit(1)
-
-
-
-                print("Connection to main server established. Sending message ...\n")
                 message = prepare_get_message(request, server_info)
                 print(message)
                 server_socket.send(message.encode())
@@ -265,10 +265,50 @@ def main():
 
                     send_response_to_client(conn, directory, file_name, header_message)
 
-            # If the file is in the proxy, we must send conditional get to see if it us been updated
+            # If the file is in the proxy, check time stamp and send conditional gets
 
             else:
                 print('do this if the file exists')
+                # Last modified time in seconds from epoch
+                mod = os.stat(file_path).st_mtime
+                # Current time in seconds from epoch
+                cur = int(time.time())
+                
+                # If the file is expired
+
+                if(mod < (cur - EXPIRY_IN_SECONDS)):
+                    
+                    print('[EXPIRY] The resuested file has expired. Going to retrieve a new one ...')
+
+                    # Delete the old file
+
+                    os.remove(file_path)
+
+                    message = prepare_get_message(request, server_info)
+                    print(message)
+                    server_socket.send(message.encode())
+
+                    response_line = get_line_from_socket(server_socket)
+                    print(response_line)
+                    response_list = response_line.split(' ')
+
+                    # If file does not exist, or error is encountered
+                    
+                    if response_list[1] != '200':
+                        print('going to forward response to client method')
+                        forward_response_to_client(response_line, conn, server_socket)
+                    
+                    # File exists
+
+                    else:
+                        
+                        print('Success:  Server is sending file.  Downloading it now.')
+
+                        # Create the directory for this file
+                        
+                        directoryArray = directory.split('/')
+                        make_directory(directoryArray)
+                        file_name = req_file.rpartition('/')[2]
 
 
         
