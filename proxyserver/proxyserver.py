@@ -5,7 +5,7 @@ import time
 import signal
 import sys
 
-PORT = 8081
+PORT = 8082
 BUFFER_SIZE = 1024 # bytes
 EXPIRY_IN_SECONDS = 30 # Second
 
@@ -139,6 +139,35 @@ def save_file_from_socket(sock, bytes_to_read, path, file_name):
             bytes_read += len(chunk)
             file_to_write.write(chunk)
 
+def send_file_as_new(directory,req_file,response_line,server_socket,conn):
+    print('Success:  Server is sending file.  Downloading it now.')
+
+    # Create the directory for this file
+    
+    directoryArray = directory.split('/')
+    make_directory(directoryArray)
+    file_name = req_file.rpartition('/')[2]
+    
+    
+    # Go through headers and find the size of the file, then save it
+
+    bytes_to_read = 0
+    headers_done = False
+    header_message = response_line
+    while(not headers_done):
+        header_line = get_line_from_socket(server_socket)
+        header_message = header_message + '\r\n'+ header_line
+        header_list = header_line.split(' ')
+        if(header_line == ''):
+            headers_done = True
+        elif(header_list[0] == 'Content-Length:'):
+            bytes_to_read = int(header_list[1])
+    header_message+='\r\n\r\n'
+    save_file_from_socket(server_socket, bytes_to_read, directory, file_name)
+
+    send_response_to_client(conn, directory, file_name, header_message)
+
+
 # Our main function.
 
 def main():
@@ -237,44 +266,19 @@ def main():
                 # File exists
 
                 else:
-                    
-                    print('Success:  Server is sending file.  Downloading it now.')
+                    send_file_as_new(directory,req_file,response_line,server_socket,conn)
 
-                    # Create the directory for this file
-                    
-                    directoryArray = directory.split('/')
-                    make_directory(directoryArray)
-                    file_name = req_file.rpartition('/')[2]
-                    
-                    
-                    # Go through headers and find the size of the file, then save it
-
-                    bytes_to_read = 0
-                    headers_done = False
-                    header_message = response_line
-                    while(not headers_done):
-                        header_line = get_line_from_socket(server_socket)
-                        header_message = header_message + '\r\n'+ header_line
-                        header_list = header_line.split(' ')
-                        if(header_line == ''):
-                            headers_done = True
-                        elif(header_list[0] == 'Content-Length:'):
-                            bytes_to_read = int(header_list[1])
-                    header_message+='\r\n\r\n'
-                    save_file_from_socket(server_socket, bytes_to_read, directory, file_name)
-
-                    send_response_to_client(conn, directory, file_name, header_message)
 
             # If the file is in the proxy, check time stamp and send conditional gets
 
             else:
-                print('do this if the file exists')
+                print('We already have this file! Checking if it has expired ...')
                 # Last modified time in seconds from epoch
                 mod = os.stat(file_path).st_mtime
                 # Current time in seconds from epoch
                 cur = int(time.time())
                 
-                # If the file is expired
+                # If the file is expired, delete the file and treat it like a regular get
 
                 if(mod < (cur - EXPIRY_IN_SECONDS)):
                     
@@ -292,7 +296,7 @@ def main():
                     print(response_line)
                     response_list = response_line.split(' ')
 
-                    # If file does not exist, or error is encountered
+                    # If file does not exist in server, or error is encountered
                     
                     if response_list[1] != '200':
                         print('going to forward response to client method')
@@ -305,15 +309,18 @@ def main():
                         print('Success:  Server is sending file.  Downloading it now.')
 
                         # Create the directory for this file
-                        
-                        directoryArray = directory.split('/')
-                        make_directory(directoryArray)
-                        file_name = req_file.rpartition('/')[2]
+                        send_file_as_new(directory,req_file,response_line,server_socket,conn)       
+                
+                else:
 
-
+                    print('FILE HAS NOT EXPIRED. Sending conditional GET to server to check if there has been an update')
+                    
+                    message = prepare_get_message(request, server_info)
+                    print(message)
+                    server_socket.send(message.encode())
         
         
-        conn.close()
+        server_socket.close()
             
             
 

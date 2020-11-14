@@ -45,7 +45,7 @@ def print_file_from_socket(sock, bytes_to_read):
 # Read a file from the socket and save it out.
 
 def save_file_from_socket(sock, bytes_to_read, file_name):
-
+    sock.recv(2)
     with open(file_name, 'wb') as file_to_write:
         bytes_read = 0
         while (bytes_read < bytes_to_read):
@@ -136,12 +136,27 @@ def main():
             print_file_from_socket(client_socket, bytes_to_read)
             sys.exit(1)
 
-        # File exists and is okay
+        # File exists and is ready for download
+
         else:
-            print('file was okay, read headers and download file')
-        ######################################################
-        # Rest of client code here for receiving the file in return
-        ######################################################
+            
+            print('Success:  Server is sending file.  Downloading it now.')
+
+            # Get proper name of file
+
+            file_name = file_name.rpartition('/')[2]
+
+            # Go through headers and find the size of the file, then save it.
+    
+            bytes_to_read = 0
+            while (not headers_done):
+                header_line = get_line_from_socket(client_socket)
+                header_list = header_line.split(' ')
+                if (header_line == ''):
+                    headers_done = True
+                elif (header_list[0] == 'Content-Length:'):
+                    bytes_to_read = int(header_list[1])
+            save_file_from_socket(client_socket, bytes_to_read, file_name)
 
     else:
         print('Connecting to server ...')
@@ -156,12 +171,8 @@ def main():
         
         print('Connection to server established. Sending message ...\n')
         message = prepare_get_message(host, port, file_name)
-        print('message about to send')
         client_socket.send(message.encode())
-
-        print('receiving response')
         response_line = get_line_from_socket(client_socket)
-        print('response line')
         response_list = response_line.split(' ')
         headers_done = False
             
@@ -219,6 +230,7 @@ def main():
 
             while (file_name[0] == '/'):
                 file_name = file_name[1:]
+            file_name = file_name.rpartition('/')[2]
 
             # Go through headers and find the size of the file, then save it.
     
